@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?   @db.Text
+  accounts      Account[]
+  sessions      Session[]
+  profile       UserProfile?
+  survey        UserSurvey?
+  onboarding    UserOnboarding?
+  business      UserBusiness?
+  payments      Payment[]
+
+  @@map("user")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtoken")
+}
+
+model UserProfile {
+  userId        String  @id
+  asksCompleted Boolean @default(false)
+  askedAt       DateTime?
+  onboardingCompleted Boolean @default(false)
+  onboardingAt DateTime?
+  isPremium     Boolean @default(false)
+  premiumSince  DateTime?
+  premiumSource String?
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profile")
+}
+
+model UserSurvey {
+  userId    String   @id
+  answers   Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_survey")
+}
+
+model UserOnboarding {
+  userId    String   @id
+  answers   Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_onboarding")
+}
+
+model UserBusiness {
+  userId          String   @id
+  businessName    String?
+  businessType    String?
+  businessScale   String?
+  financialStress String?
+  items           Json
+  costs           Json
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_business")
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  plan      String
+  tranId    String   @unique
+  amount    Float
+  currency  String
+  status    String
+  qrString  String?
+  qrImage   String?
+  rawRequest Json?
+  rawResponse Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payment")
+}
