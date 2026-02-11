@@ -392,6 +392,12 @@ const Biz = ({
   }, [tier])
 
   useEffect(() => {
+    if (!isPremium && (activeTab === "analysis" || activeTab === "reports" || activeTab === "forecast" || activeTab === "inventory" || activeTab === "pricing")) {
+      setActiveTab("calculator")
+    }
+  }, [isPremium, activeTab])
+
+  useEffect(() => {
     const id = window.setInterval(() => setPromoActive(isPromoActive()), 60000)
     return () => window.clearInterval(id)
   }, [])
@@ -1358,7 +1364,9 @@ const Biz = ({
               { id: "inventory", label: "Inventory" },
               { id: "pricing", label: "Pricing Lab" },
             ] as { id: Tab; label: string }[]).map((tab) => {
-              const isLocked = !isPremium && (tab.id === "analysis" || tab.id === "reports")
+              const isLocked =
+                !isPremium &&
+                (tab.id === "analysis" || tab.id === "reports" || tab.id === "forecast" || tab.id === "inventory" || tab.id === "pricing")
               return (
                 <button
                   key={tab.id}

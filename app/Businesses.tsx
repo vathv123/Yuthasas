@@ -98,7 +98,9 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
     setBusinessType(toAnswerString(answers[2]))
     setFinancialStress(toAnswerString(answers[3]))
     const selectedPlan = toAnswerString(answers[4]) || "Free"
-    setTier(selectedPlan === "Premium" ? "Free" : selectedPlan)
+    const promoActiveNow = isPromoActive()
+    const selectedPremiumDuringPromo = selectedPlan === "Premium" && promoActiveNow
+    setTier(selectedPremiumDuringPromo ? "Premium" : selectedPlan)
 
     // Optimistic local persistence so onboarding is one-time even if DB is briefly unavailable.
     try {
@@ -135,6 +137,11 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       if (!res?.ok) {
         // Fallback: let user proceed and keep trying in the background.
         setOnboardingError("Database temporarily unavailable. Continuing with local data.")
+        if (selectedPremiumDuringPromo) {
+          setTier("Premium")
+        } else {
+          setTier("Free")
+        }
         setShowOnboarding("hide")
         window.setTimeout(async () => {
           await fetch("/api/onboarding", {
@@ -147,10 +154,10 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       }
       if (data?.isPremium) {
         setTier("Premium")
-      } else if (selectedPlan === "Premium" && isPromoActive()) {
-        setTier("Free")
-        setOnboardingError("Premium slot not granted. Please try again.")
-      } else if (!isPromoActive() && selectedPlan === "Premium") {
+      } else if (selectedPremiumDuringPromo) {
+        // During promo window, selecting Premium should unlock Premium immediately.
+        setTier("Premium")
+      } else if (!promoActiveNow && selectedPlan === "Premium") {
         setTier("Free")
         window.location.href = "/Enterprise?payway=1"
       } else {
