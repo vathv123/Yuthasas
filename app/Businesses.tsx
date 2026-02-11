@@ -30,7 +30,11 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
             method: "GET",
           })
           const limitData = await limitRes.json().catch(() => null)
-          if (limitRes.ok && limitData?.blocked) return
+          if (limitRes.ok && limitData?.blocked) {
+            // Do not leave the page in an unresolved state.
+            // Account limiting is enforced during signup/signin flows.
+            setShowOnboarding("show")
+          }
         }
 
         await fetch("/api/auth/register/device-register", {
@@ -95,6 +99,11 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       )}
       {showOnboarding === "hide" && (
         <Biz businessScale={businessScale} businessType={businessType} financialStress={financialStress} tier={tier} />
+      )}
+      {showOnboarding === "unknown" && status === "authenticated" && (
+        <div className="min-h-[50vh] flex items-center justify-center text-black/60 font-[Gilroy-Medium]">
+          Loading your workspace...
+        </div>
       )}
     </>
   )
