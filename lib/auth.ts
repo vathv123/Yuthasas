@@ -3,7 +3,6 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import prisma from "./prisma"
 import { verifyPassword } from "./password"
-import { withPrismaRetry } from "./prismaRetry"
 
 export const authOptions: NextAuthOptions = {
   pages: {
@@ -49,30 +48,7 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider !== "google") return true
       const email = String(user?.email ?? "").trim().toLowerCase()
       if (!email) return false
-
-      const db = prisma as any
-      try {
-        const savedUser = await withPrismaRetry<any>(
-          () =>
-            db.user.upsert({
-              where: { email },
-              update: {
-                name: user?.name ? String(user.name).trim() : undefined,
-                emailVerified: new Date(),
-              },
-              create: {
-                email,
-                name: user?.name ? String(user.name).trim() : "User",
-                emailVerified: new Date(),
-              },
-            }),
-          2
-        )
-
-        ;(user as { id?: string }).id = String(savedUser.id)
-      } catch {
-        // Do not block OAuth login when DB has a transient disconnection.
-      }
+      // Keep OAuth callback DB-free so transient DB failures cannot break login.
       return true
     },
     async jwt({ token, user }) {
