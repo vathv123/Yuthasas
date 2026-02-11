@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash, getUserAgent } from "@/lib/device"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 export const runtime = "nodejs"
 
@@ -28,17 +29,24 @@ export async function POST(request: Request) {
   const userAgent = getUserAgent(request)
   const db = prisma as any
 
-  const existing = await db.signupEvent.findFirst({
-    where: { email, ip, deviceHash },
-    select: { id: true },
-  })
+  const existing = await withPrismaRetry<any>(
+    () =>
+      db.signupEvent.findFirst({
+        where: { email, ip, deviceHash },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!existing) {
-    await db.signupEvent.create({
-      data: { email, ip, deviceHash, userAgent },
-    })
+    await withPrismaRetry(
+      () =>
+        db.signupEvent.create({
+          data: { email, ip, deviceHash, userAgent },
+        }),
+      1
+    )
   }
 
   return NextResponse.json({ ok: true }, { status: 200 })
 }
-

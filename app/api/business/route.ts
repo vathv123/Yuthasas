@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 const db = prisma as any
 
@@ -20,18 +21,37 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: null }, { status: 200 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ data: null }, { status: 200 })
   }
 
-  const business = await db.userBusiness.findUnique({
+  const business = await withPrismaRetry(
+    () =>
+      db.userBusiness.findUnique({
     where: { userId: user.id },
-  })
+  }),
+    1
+  )
 
   return NextResponse.json({ data: business }, { status: 200 })
 }
@@ -49,10 +69,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ ok: false }, { status: 404 })
@@ -97,7 +132,9 @@ export async function POST(request: Request) {
         )
       : {}
 
-  await db.userBusiness.upsert({
+  await withPrismaRetry(
+    () =>
+      db.userBusiness.upsert({
     where: { userId: user.id },
     update: {
       businessName: businessName ?? null,
@@ -116,7 +153,9 @@ export async function POST(request: Request) {
       items: safeItems,
       costs: safeCosts,
     },
-  })
+  }),
+    1
+  )
 
   return NextResponse.json({ ok: true }, { status: 200 })
 }

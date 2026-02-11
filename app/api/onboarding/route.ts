@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { isPromoActive } from "@/lib/promo"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 const db = prisma as any
 
@@ -21,24 +22,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ completed: false, answers: null }, { status: 200 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ completed: false, answers: null }, { status: 200 })
   }
 
-  const [profile, onboarding] = await Promise.all([
-    db.userProfile.findUnique({
+  const [profile, onboarding]: [any, any] = await Promise.all([
+    withPrismaRetry(() => db.userProfile.findUnique({
       where: { userId: user.id },
       select: { onboardingCompleted: true, isPremium: true },
-    }),
-    db.userOnboarding.findUnique({
+    }), 1),
+    withPrismaRetry(() => db.userOnboarding.findUnique({
       where: { userId: user.id },
       select: { answers: true },
-    }),
+    }), 1),
   ])
 
   return NextResponse.json(
@@ -64,10 +80,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ ok: false }, { status: 404 })
@@ -92,13 +123,15 @@ export async function POST(request: Request) {
 
   let grantPremium = false
   if (promoActive && wantsPremium) {
-    const premiumCount = await db.userProfile.count({
+    const premiumCount = await withPrismaRetry<number>(() => db.userProfile.count({
       where: { isPremium: true },
-    })
+    }), 1)
     if (premiumCount < 100) grantPremium = true
   }
 
-  await db.userProfile.upsert({
+  await withPrismaRetry(
+    () =>
+      db.userProfile.upsert({
     where: { userId: user.id },
     update: {
       onboardingCompleted: true,
@@ -115,14 +148,20 @@ export async function POST(request: Request) {
       premiumSince: grantPremium ? new Date() : undefined,
       premiumSource: grantPremium ? "promo" : undefined,
     },
-  })
+  }),
+    1
+  )
 
   if (answers) {
-    await db.userOnboarding.upsert({
+    await withPrismaRetry(
+      () =>
+        db.userOnboarding.upsert({
       where: { userId: user.id },
       update: { answers },
       create: { userId: user.id, answers },
-    })
+    }),
+      1
+    )
   }
 
   return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })

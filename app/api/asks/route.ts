@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 const db = prisma as any
 
@@ -20,24 +21,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ completed: false }, { status: 200 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ completed: false }, { status: 200 })
   }
 
-  const [profile, survey] = await Promise.all([
-    db.userProfile.findUnique({
+  const [profile, survey]: [any, any] = await Promise.all([
+    withPrismaRetry(() => db.userProfile.findUnique({
       where: { userId: user.id },
       select: { asksCompleted: true, onboardingCompleted: true },
-    }),
-    db.userSurvey.findUnique({
+    }), 1),
+    withPrismaRetry(() => db.userSurvey.findUnique({
       where: { userId: user.id },
       select: { answers: true },
-    }),
+    }), 1),
   ])
 
   return NextResponse.json(
@@ -63,10 +79,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  })
+  const email = String(session.user.email).trim().toLowerCase()
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+  const user = await withPrismaRetry<any>(
+    () =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: sessionName,
+          emailVerified: new Date(),
+        },
+        create: {
+          email,
+          name: sessionName || "User",
+          emailVerified: new Date(),
+        },
+        select: { id: true },
+      }),
+    1
+  )
 
   if (!user) {
     return NextResponse.json({ ok: false }, { status: 404 })
@@ -83,18 +114,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 })
   }
 
-  await db.userProfile.upsert({
+  await withPrismaRetry(
+    () =>
+      db.userProfile.upsert({
     where: { userId: user.id },
     update: { asksCompleted: true, askedAt: new Date() },
     create: { userId: user.id, asksCompleted: true, askedAt: new Date() },
-  })
+  }),
+    1
+  )
 
   if (answers) {
-    await db.userSurvey.upsert({
+    await withPrismaRetry(
+      () =>
+        db.userSurvey.upsert({
       where: { userId: user.id },
       update: { answers },
       create: { userId: user.id, answers },
-    })
+    }),
+      1
+    )
   }
 
   return NextResponse.json({ ok: true }, { status: 200 })

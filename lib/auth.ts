@@ -51,24 +51,28 @@ export const authOptions: NextAuthOptions = {
       if (!email) return false
 
       const db = prisma as any
-      const savedUser = await withPrismaRetry<any>(
-        () =>
-          db.user.upsert({
-            where: { email },
-            update: {
-              name: user?.name ? String(user.name).trim() : undefined,
-              emailVerified: new Date(),
-            },
-            create: {
-              email,
-              name: user?.name ? String(user.name).trim() : "User",
-              emailVerified: new Date(),
-            },
-          }),
-        1
-      )
+      try {
+        const savedUser = await withPrismaRetry<any>(
+          () =>
+            db.user.upsert({
+              where: { email },
+              update: {
+                name: user?.name ? String(user.name).trim() : undefined,
+                emailVerified: new Date(),
+              },
+              create: {
+                email,
+                name: user?.name ? String(user.name).trim() : "User",
+                emailVerified: new Date(),
+              },
+            }),
+          2
+        )
 
-      ;(user as { id?: string }).id = String(savedUser.id)
+        ;(user as { id?: string }).id = String(savedUser.id)
+      } catch {
+        // Do not block OAuth login when DB has a transient disconnection.
+      }
       return true
     },
     async jwt({ token, user }) {
