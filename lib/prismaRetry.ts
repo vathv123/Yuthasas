@@ -15,9 +15,9 @@ export async function withPrismaRetry<T>(operation: () => Promise<T>, retries = 
   } catch (error) {
     if (retries > 0 && isClosedConnectionError(error)) {
       await prisma.$disconnect().catch(() => null)
+      await prisma.$connect().catch(() => null)
       return withPrismaRetry(operation, retries - 1)
     }
     throw error
   }
 }
-

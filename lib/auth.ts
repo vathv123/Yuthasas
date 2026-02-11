@@ -71,7 +71,7 @@ export const authOptions: NextAuthOptions = {
       } catch {
         // ignore and fallback
       }
-      return `${baseUrl}/authentications/signup`
+      return `${baseUrl}/Enterprise`
     },
   },
 }
