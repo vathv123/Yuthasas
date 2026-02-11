@@ -1,12 +1,11 @@
 import type { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import prisma from "./prisma"
 import { verifyPassword } from "./password"
+import { withPrismaRetry } from "./prismaRetry"
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
   pages: {
     signIn: "/authentications/signup",
     error: "/authentications/signup",
@@ -46,6 +45,32 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider !== "google") return true
+      const email = String(user?.email ?? "").trim().toLowerCase()
+      if (!email) return false
+
+      const db = prisma as any
+      const savedUser = await withPrismaRetry<any>(
+        () =>
+          db.user.upsert({
+            where: { email },
+            update: {
+              name: user?.name ? String(user.name).trim() : undefined,
+              emailVerified: new Date(),
+            },
+            create: {
+              email,
+              name: user?.name ? String(user.name).trim() : "User",
+              emailVerified: new Date(),
+            },
+          }),
+        1
+      )
+
+      ;(user as { id?: string }).id = String(savedUser.id)
+      return true
+    },
     async jwt({ token, user }) {
       if (user?.id) {
         token.sub = user.id
