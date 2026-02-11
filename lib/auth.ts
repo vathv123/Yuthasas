@@ -38,10 +38,22 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: {
-    strategy: "database",
+    strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
+    async jwt({ token, user }) {
+      if (user?.id) {
+        token.sub = user.id
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (session.user && token?.sub) {
+        ;(session.user as { id?: string }).id = token.sub
+      }
+      return session
+    },
     async signIn({ user }) {
       const email = user?.email
       if (!email) return false

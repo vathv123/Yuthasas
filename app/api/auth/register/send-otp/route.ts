@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { hashPassword } from "@/lib/password"
+import { issueOtp } from "@/lib/otp"
+import { sendSignupOtpEmail } from "@/lib/email"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
+import { getDeviceHash } from "@/lib/device"
 
 export const runtime = "nodejs"
+const ACCOUNT_LIMIT_PER_DEVICE = 2
 
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 const isStrongPassword = (password: string) =>
@@ -17,9 +21,11 @@ const isStrongPassword = (password: string) =>
 export async function POST(request: Request) {
   const originGuard = rejectIfNotSameOrigin(request)
   if (originGuard) return originGuard
+
   const ip = getRequestIP(request)
-  const rl = checkRateLimit(`${ip}:auth:register`, 10, 60_000)
-  if (!rl.ok) {
+  const deviceHash = getDeviceHash(request)
+  const globalLimit = checkRateLimit(`${ip}:auth:register:otp`, 6, 60_000)
+  if (!globalLimit.ok) {
     return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 })
   }
 
@@ -61,29 +67,42 @@ export async function POST(request: Request) {
 
   const db = prisma as any
   const existing = await db.user.findUnique({ where: { email } })
+  if (existing?.passwordHash) {
+    return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+  }
+
+  const deviceEvents = await db.signupEvent.findMany({
+    where: { ip, deviceHash },
+    distinct: ["email"],
+    select: { email: true },
+    orderBy: { email: "asc" },
+  })
+  const uniqueEmails = deviceEvents.map((e: { email: string }) => e.email)
+  if (uniqueEmails.length >= ACCOUNT_LIMIT_PER_DEVICE && !uniqueEmails.includes(email)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "ACCOUNT_LIMIT_EXCEEDED",
+        error: "This device has reached the max of 2 accounts. Remove one account to continue.",
+        accounts: uniqueEmails,
+      },
+      { status: 409 }
+    )
+  }
+
   const existingName = await db.user.findFirst({ where: { name } })
   if (existingName && existingName.email !== email) {
     return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
   }
+
   const passwordHash = hashPassword(password)
-  if (existing) {
-    if (!existing.passwordHash) {
-      await db.user.update({
-        where: { email },
-        data: { passwordHash, name: existing.name ?? name },
-      })
-      return NextResponse.json({ ok: true, updated: true }, { status: 200 })
-    }
-    return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+  const otp = issueOtp({ email, name, passwordHash })
+
+  try {
+    await sendSignupOtpEmail(email, otp.code)
+  } catch {
+    return NextResponse.json({ ok: false, error: "Unable to send OTP email" }, { status: 500 })
   }
 
-  await db.user.create({
-    data: {
-      name,
-      email,
-      passwordHash,
-    },
-  })
-
-  return NextResponse.json({ ok: true }, { status: 201 })
+  return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
 }

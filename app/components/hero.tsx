@@ -124,7 +124,7 @@ const Hero = () => {
                 </div>
             </div>
             {showPromo && (
-                <div className="fixed bottom-6 right-6 z-40 hidden sm:block">
+                <div className="fixed bottom-4 right-4 z-40 w-[calc(100vw-2rem)] max-w-[320px] sm:bottom-6 sm:right-6 sm:w-auto">
                     <div className="bg-white/85 backdrop-blur-md border border-black/10 rounded-2xl px-4 py-3 shadow-lg font-[Gilroy-Medium]">
                         <p className="text-[12px] uppercase tracking-[0.2em] text-black/40">Free Premium Plan</p>
                         <div className="mt-2 flex items-center gap-3">
@@ -134,7 +134,7 @@ const Hero = () => {
                         </div>
                         <p className="text-[11px] text-black/40 mt-1">
                             Countdown
-                            {betaCount !== null && betaLimit !== null ? ` • ${betaCount}/${betaLimit}` : ""}
+                            {betaCount !== null && betaLimit !== null ? ` | ${betaCount}/${betaLimit}` : ""}
                         </p>
                     </div>
                 </div>
@@ -143,3 +143,4 @@ const Hero = () => {
     )
 }
 export default Hero
+

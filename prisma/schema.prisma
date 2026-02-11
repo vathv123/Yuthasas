@@ -25,6 +25,19 @@ model User {
   @@map("user")
 }
 
+model SignupEvent {
+  id         Int      @id @default(autoincrement())
+  email      String
+  ip         String
+  deviceHash String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([ip, deviceHash])
+  @@index([email])
+  @@map("signup_event")
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String

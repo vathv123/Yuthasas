@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { isPromoActive } from "@/lib/promo"
 
 type Step = 0 | 1 | 2
 
@@ -52,6 +53,12 @@ const OnboardingModal = ({ onComplete }: OnboardingModalProps) => {
   const [selectedAnswer, setSelectedAnswer] = useState("")
   const [selectedPlan, setSelectedPlan] = useState<number | null>(null)
   const [open, setOpen] = useState(true)
+  const [promoActive, setPromoActive] = useState(isPromoActive())
+
+  useEffect(() => {
+    const timer = setInterval(() => setPromoActive(isPromoActive()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const close = () => {
     setOpen(false)
@@ -151,7 +158,16 @@ const OnboardingModal = ({ onComplete }: OnboardingModalProps) => {
                       : 'border-gray-200 hover:border-gray-400 bg-white text-black'
                   }`}>
                     <h3 className=" mb-1">{plan.name}</h3>
-                    <p className="text-3xl  mb-1">{plan.price}</p>
+                    <div className="mb-1">
+                      {plan.name === "Premium" && promoActive ? (
+                        <>
+                          <p className="text-3xl line-through opacity-70">{plan.price}</p>
+                          <p className="text-sm text-emerald-400">Free during beta</p>
+                        </>
+                      ) : (
+                        <p className="text-3xl">{plan.price}</p>
+                      )}
+                    </div>
                     <p className={`text-sm mb-6 ${selectedPlan === i || (plan.highlighted && selectedPlan !== i) ? 'text-gray-300' : 'text-gray-600'}`}>{plan.period}</p>
                     <ul className="space-y-2 text-sm">
                       {plan.features.map((f, j) => (

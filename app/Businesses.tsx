@@ -2,11 +2,11 @@
 import { useEffect, useState } from "react"
 import OnboardingModal from "./components/OnboardingModal"
 import Biz from "./components/biz"
-import { useSession } from "next-auth/react"
+import { signOut, useSession } from "next-auth/react"
 import { isPromoActive } from "@/lib/promo"
 
 const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) => {
-  const { status } = useSession()
+  const { status, data: session } = useSession()
   const [showOnboarding, setShowOnboarding] = useState<"unknown" | "show" | "hide">("unknown")
   const [businessScale, setBusinessScale] = useState("")
   const [businessType, setBusinessType] = useState("")
@@ -24,6 +24,23 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
     }
     const loadStatus = async () => {
       try {
+        const email = session?.user?.email?.trim().toLowerCase()
+        if (email) {
+          const limitRes = await fetch(`/api/auth/register/device-limit?email=${encodeURIComponent(email)}`, {
+            method: "GET",
+          })
+          const limitData = await limitRes.json().catch(() => null)
+          if (limitRes.ok && limitData?.blocked) {
+            await signOut({ callbackUrl: "/authentications/signup?limit=1" })
+            return
+          }
+        }
+
+        await fetch("/api/auth/register/device-register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }).catch(() => null)
+
         const res = await fetch("/api/onboarding", { method: "GET" })
         const data = await res.json()
         const answers = data?.answers && typeof data.answers === "object" ? (data.answers as Record<number, string | string[]>) : null
@@ -47,7 +64,7 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       }
     }
     loadStatus()
-  }, [status, forceOnboarding])
+  }, [status, session?.user?.email, forceOnboarding])
 
   const handleOnboardingComplete = async (answers: Record<number, string | string[]>) => {
     setBusinessScale(toAnswerString(answers[1]))
