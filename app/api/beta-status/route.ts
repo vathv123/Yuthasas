@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { isPromoActive } from "@/lib/promo"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 export const runtime = "nodejs"
 
@@ -12,18 +13,37 @@ export async function GET(request: Request) {
     return NextResponse.json({ count: 0, limit: 100, full: false, active: false }, { status: 429 })
   }
   const limit = 100
-  const db = prisma as any
-  const count = await db.userProfile.count({
-    where: { isPremium: true },
-  })
   const active = isPromoActive()
-  return NextResponse.json(
-    {
-      count,
-      limit,
-      full: active ? count >= limit : false,
-      active,
-    },
-    { status: 200 }
-  )
+  const db = prisma as any
+
+  try {
+    const count = await withPrismaRetry<number>(
+      () =>
+        db.userProfile.count({
+          where: { isPremium: true },
+        }),
+      1
+    )
+
+    return NextResponse.json(
+      {
+        count,
+        limit,
+        full: active ? count >= limit : false,
+        active,
+      },
+      { status: 200 }
+    )
+  } catch {
+    // Keep UI functional when DB is temporarily unavailable.
+    return NextResponse.json(
+      {
+        count: 0,
+        limit,
+        full: false,
+        active,
+      },
+      { status: 200 }
+    )
+  }
 }

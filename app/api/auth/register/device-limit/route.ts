@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { getDeviceHash } from "@/lib/device"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 export const runtime = "nodejs"
 
@@ -18,24 +19,41 @@ export async function GET(request: Request) {
   }
 
   const db = prisma as any
-  const deviceEvents = await db.signupEvent.findMany({
-    where: { ip, deviceHash },
-    distinct: ["email"],
-    select: { email: true },
-    orderBy: { email: "asc" },
-  })
-  const accounts = deviceEvents.map((e: { email: string }) => e.email)
 
-  const blockedForRequest =
-    accounts.length >= ACCOUNT_LIMIT_PER_DEVICE && (!email || !accounts.includes(email))
+  try {
+    const deviceEvents = await withPrismaRetry<Array<{ email: string }>>(
+      () =>
+        db.signupEvent.findMany({
+          where: { ip, deviceHash },
+          distinct: ["email"],
+          select: { email: true },
+          orderBy: { email: "asc" },
+        }),
+      1
+    )
+    const accounts = deviceEvents.map((e: { email: string }) => e.email)
 
-  return NextResponse.json(
-    {
-      ok: true,
-      blocked: blockedForRequest,
-      limit: ACCOUNT_LIMIT_PER_DEVICE,
-      accounts,
-    },
-    { status: 200 }
-  )
+    const blockedForRequest =
+      accounts.length >= ACCOUNT_LIMIT_PER_DEVICE && (!email || !accounts.includes(email))
+
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: blockedForRequest,
+        limit: ACCOUNT_LIMIT_PER_DEVICE,
+        accounts,
+      },
+      { status: 200 }
+    )
+  } catch {
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: false,
+        limit: ACCOUNT_LIMIT_PER_DEVICE,
+        accounts: [],
+      },
+      { status: 200 }
+    )
+  }
 }
