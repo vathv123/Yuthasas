@@ -5,11 +5,13 @@ const getTransporter = () => {
   const port = Number(process.env.SMTP_PORT ?? "465")
   const secure = String(process.env.SMTP_SECURE ?? "true") !== "false"
   const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASS
+  const passRaw = process.env.SMTP_PASS
 
-  if (!user || !pass) {
+  if (!user || !passRaw) {
     throw new Error("SMTP credentials are missing")
   }
+  // Gmail app passwords are often copied with spaces. Normalize to avoid auth failures.
+  const pass = passRaw.replace(/\s+/g, "")
 
   return nodemailer.createTransport({ host, port, secure, auth: { user, pass } })
 }

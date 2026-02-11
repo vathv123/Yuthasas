@@ -66,43 +66,58 @@ export async function POST(request: Request) {
   }
 
   const db = prisma as any
-  const existing = await db.user.findUnique({ where: { email } })
-  if (existing?.passwordHash) {
-    return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
-  }
-
-  const deviceEvents = await db.signupEvent.findMany({
-    where: { ip, deviceHash },
-    distinct: ["email"],
-    select: { email: true },
-    orderBy: { email: "asc" },
-  })
-  const uniqueEmails = deviceEvents.map((e: { email: string }) => e.email)
-  if (uniqueEmails.length >= ACCOUNT_LIMIT_PER_DEVICE && !uniqueEmails.includes(email)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "ACCOUNT_LIMIT_EXCEEDED",
-        error: "This device has reached the max of 2 accounts. Remove one account to continue.",
-        accounts: uniqueEmails,
-      },
-      { status: 409 }
-    )
-  }
-
-  const existingName = await db.user.findFirst({ where: { name } })
-  if (existingName && existingName.email !== email) {
-    return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
-  }
-
-  const passwordHash = hashPassword(password)
-  const otp = issueOtp({ email, name, passwordHash })
-
   try {
-    await sendSignupOtpEmail(email, otp.code)
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unable to send OTP email" }, { status: 500 })
-  }
+    const existing = await db.user.findUnique({ where: { email } })
+    if (existing?.passwordHash) {
+      return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+    }
 
-  return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
+    let uniqueEmails: string[] = []
+    try {
+      const deviceEvents = await db.signupEvent.findMany({
+        where: { ip, deviceHash },
+        distinct: ["email"],
+        select: { email: true },
+        orderBy: { email: "asc" },
+      })
+      uniqueEmails = deviceEvents.map((e: { email: string }) => e.email)
+    } catch {
+      // Keep OTP flow running if optional device-tracking table is unavailable.
+      uniqueEmails = []
+    }
+
+    if (uniqueEmails.length >= ACCOUNT_LIMIT_PER_DEVICE && !uniqueEmails.includes(email)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "ACCOUNT_LIMIT_EXCEEDED",
+          error: "This device has reached the max of 2 accounts. Remove one account to continue.",
+          accounts: uniqueEmails,
+        },
+        { status: 409 }
+      )
+    }
+
+    const existingName = await db.user.findFirst({ where: { name } })
+    if (existingName && existingName.email !== email) {
+      return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
+    }
+
+    const passwordHash = hashPassword(password)
+    const otp = issueOtp({ email, name, passwordHash })
+
+    try {
+      await sendSignupOtpEmail(email, otp.code)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to send OTP email"
+      return NextResponse.json(
+        { ok: false, error: message.includes("SMTP") ? message : "Unable to send OTP email" },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
+  } catch {
+    return NextResponse.json({ ok: false, error: "Signup service temporarily unavailable" }, { status: 503 })
+  }
 }
