@@ -12,6 +12,7 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
   const [businessType, setBusinessType] = useState("")
   const [financialStress, setFinancialStress] = useState("")
   const [tier, setTier] = useState("Free")
+  const [onboardingError, setOnboardingError] = useState("")
 
   const toAnswerString = (value: string | string[] | undefined) =>
     Array.isArray(value) ? value.join(", ") : (value || "")
@@ -68,6 +69,7 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
   }, [status, session?.user?.email, forceOnboarding])
 
   const handleOnboardingComplete = async (answers: Record<number, string | string[]>) => {
+    setOnboardingError("")
     setBusinessScale(toAnswerString(answers[1]))
     setBusinessType(toAnswerString(answers[2]))
     setFinancialStress(toAnswerString(answers[3]))
@@ -80,6 +82,11 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
     }).catch(() => null)
     try {
       const data = res ? await res.json() : null
+      if (!res?.ok) {
+        setOnboardingError(data?.error || "Unable to save onboarding. Please try again.")
+        setShowOnboarding("show")
+        return
+      }
       if (data?.isPremium) {
         setTier("Premium")
       } else if (!isPromoActive() && selectedPlan === "Premium") {
@@ -87,7 +94,9 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
         window.location.href = "/Enterprise?payway=1"
       }
     } catch {
-      // ignore
+      setOnboardingError("Unable to save onboarding. Please try again.")
+      setShowOnboarding("show")
+      return
     }
     setShowOnboarding("hide")
   }
@@ -95,7 +104,14 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
   return (
     <>
       {showOnboarding === "show" && status === "authenticated" && (
-        <OnboardingModal onComplete={handleOnboardingComplete} />
+        <>
+          <OnboardingModal onComplete={handleOnboardingComplete} />
+          {onboardingError ? (
+            <div className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-xl bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700 font-[Gilroy-Medium]">
+              {onboardingError}
+            </div>
+          ) : null}
+        </>
       )}
       {showOnboarding === "hide" && (
         <Biz businessScale={businessScale} businessType={businessType} financialStress={financialStress} tier={tier} />

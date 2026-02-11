@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json(
     {
-      completed: profile?.onboardingCompleted ?? false,
+      completed: (profile?.onboardingCompleted ?? false) || Boolean(onboarding?.answers),
       answers: onboarding?.answers ?? null,
       isPremium: profile?.isPremium ?? false,
     },
@@ -123,10 +123,27 @@ export async function POST(request: Request) {
 
   let grantPremium = false
   if (promoActive && wantsPremium) {
-    const premiumCount = await withPrismaRetry<number>(() => db.userProfile.count({
-      where: { isPremium: true },
-    }), 1)
-    if (premiumCount < 100) grantPremium = true
+    const existingProfile = await withPrismaRetry<any>(
+      () =>
+        db.userProfile.findUnique({
+          where: { userId: user.id },
+          select: { isPremium: true },
+        }),
+      1
+    )
+    const alreadyPremium = Boolean(existingProfile?.isPremium)
+    if (alreadyPremium) {
+      grantPremium = true
+    } else {
+      const premiumCount = await withPrismaRetry<number>(
+        () =>
+          db.userProfile.count({
+            where: { isPremium: true },
+          }),
+        1
+      )
+      if (premiumCount < 100) grantPremium = true
+    }
   }
 
   await withPrismaRetry(
