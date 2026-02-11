@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import OnboardingModal from "./components/OnboardingModal"
 import Biz from "./components/biz"
-import { signOut, useSession } from "next-auth/react"
+import { useSession } from "next-auth/react"
 import { isPromoActive } from "@/lib/promo"
 
 const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) => {
@@ -30,10 +30,7 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
             method: "GET",
           })
           const limitData = await limitRes.json().catch(() => null)
-          if (limitRes.ok && limitData?.blocked) {
-            await signOut({ callbackUrl: "/authentications/signup?limit=1" })
-            return
-          }
+          if (limitRes.ok && limitData?.blocked) return
         }
 
         await fetch("/api/auth/register/device-register", {

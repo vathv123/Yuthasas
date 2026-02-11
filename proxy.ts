@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next()
 
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -15,4 +15,3 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: ["/((?!_next|favicon.ico).*)"],
 }
-
