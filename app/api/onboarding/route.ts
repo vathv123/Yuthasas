@@ -20,6 +20,7 @@ export async function GET(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ completed: false, answers: null }, { status: 200 })
   }
+  await prisma.$connect().catch(() => null)
 
   const email = String(session.user.email).trim().toLowerCase()
   const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
         },
         select: { id: true },
       }),
-    1
+    3
   )
 
   if (!user) {
@@ -49,11 +50,11 @@ export async function GET(request: Request) {
     withPrismaRetry(() => db.userProfile.findUnique({
       where: { userId: user.id },
       select: { onboardingCompleted: true, isPremium: true },
-    }), 1),
+    }), 3),
     withPrismaRetry(() => db.userOnboarding.findUnique({
       where: { userId: user.id },
       select: { answers: true },
-    }), 1),
+    }), 3),
   ])
 
   return NextResponse.json(
@@ -76,30 +77,7 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
-
-  const email = String(session.user.email).trim().toLowerCase()
-  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
-  const user = await withPrismaRetry<any>(
-    () =>
-      db.user.upsert({
-        where: { email },
-        update: {
-          name: sessionName,
-          emailVerified: new Date(),
-        },
-        create: {
-          email,
-          name: sessionName || "User",
-          emailVerified: new Date(),
-        },
-        select: { id: true },
-      }),
-    1
-  )
-
-  if (!user) {
-    return NextResponse.json({ ok: false }, { status: 404 })
-  }
+  await prisma.$connect().catch(() => null)
 
   let answers: unknown = null
   try {
@@ -113,6 +91,30 @@ export async function POST(request: Request) {
   }
 
   try {
+    const email = String(session.user.email).trim().toLowerCase()
+    const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+    const user = await withPrismaRetry<any>(
+      () =>
+        db.user.upsert({
+          where: { email },
+          update: {
+            name: sessionName,
+            emailVerified: new Date(),
+          },
+          create: {
+            email,
+            name: sessionName || "User",
+            emailVerified: new Date(),
+          },
+          select: { id: true },
+        }),
+      5
+    )
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 })
+    }
+
     const promoActive = isPromoActive()
     const desiredPlan =
       answers && typeof answers === "object" ? (answers as Record<number, string | string[]>)[4] : null
@@ -126,7 +128,7 @@ export async function POST(request: Request) {
             where: { userId: user.id },
             select: { isPremium: true },
           }),
-        2
+        5
       )
       const alreadyPremium = Boolean(existingProfile?.isPremium)
       if (alreadyPremium) {
@@ -137,7 +139,7 @@ export async function POST(request: Request) {
             db.userProfile.count({
               where: { isPremium: true },
             }),
-          2
+          5
         )
         if (premiumCount < 100) grantPremium = true
       }
@@ -163,7 +165,7 @@ export async function POST(request: Request) {
             premiumSource: grantPremium ? "promo" : undefined,
           },
         }),
-      2
+      5
     )
 
     if (answers) {
@@ -174,14 +176,15 @@ export async function POST(request: Request) {
             update: { answers },
             create: { userId: user.id, answers },
           }),
-        2
+        5
       )
     }
 
     return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Database temporarily unavailable. Please try again."
     return NextResponse.json(
-      { ok: false, error: "Database temporarily unavailable. Please try again." },
+      { ok: false, error: message },
       { status: 503 }
     )
   }

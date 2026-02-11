@@ -81,7 +81,18 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       body: JSON.stringify({ answers }),
     }).catch(() => null)
     try {
-      const data = res ? await res.json() : null
+      if (!res) {
+        setOnboardingError("Unable to save onboarding. Please try again.")
+        setShowOnboarding("show")
+        return
+      }
+      const raw = await res.text()
+      let data: any = null
+      try {
+        data = raw ? JSON.parse(raw) : null
+      } catch {
+        data = { error: raw || "Unable to save onboarding. Please try again." }
+      }
       if (!res?.ok) {
         setOnboardingError(data?.error || "Unable to save onboarding. Please try again.")
         setShowOnboarding("show")
