@@ -422,6 +422,10 @@ const Biz = ({
 
   // Load saved business data (once)
   useEffect(() => {
+    if (!isPremium) {
+      setIsLoaded(true)
+      return
+    }
     let ignore = false
     const load = async () => {
       try {
@@ -444,10 +448,11 @@ const Biz = ({
     return () => {
       ignore = true
     }
-  }, [])
+  }, [isPremium])
 
   // Auto-save changes (debounced)
   useEffect(() => {
+    if (!isPremium) return
     if (!isLoaded) return
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current)
@@ -469,7 +474,7 @@ const Biz = ({
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
     }
-  }, [isLoaded, businessName, businessType, businessScale, financialStress, items, costs])
+  }, [isPremium, isLoaded, businessName, businessType, businessScale, financialStress, items, costs])
 
   const startPaywayPayment = async () => {
     if (!promoActive) {

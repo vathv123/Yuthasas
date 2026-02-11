@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
-import { rejectIfNotSameOrigin } from "@/lib/security"
 import { isPromoActive } from "@/lib/promo"
 import { withPrismaRetry } from "@/lib/prismaRetry"
 
@@ -68,8 +67,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const originGuard = rejectIfNotSameOrigin(request)
-  if (originGuard) return originGuard
   const ip = getRequestIP(request)
   const rl = checkRateLimit(`${ip}:onboarding:post`, 30, 60_000)
   if (!rl.ok) {

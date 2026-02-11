@@ -74,7 +74,7 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
     setBusinessType(toAnswerString(answers[2]))
     setFinancialStress(toAnswerString(answers[3]))
     const selectedPlan = toAnswerString(answers[4]) || "Free"
-    setTier(selectedPlan)
+    setTier(selectedPlan === "Premium" ? "Free" : selectedPlan)
     const res = await fetch("/api/onboarding", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -89,9 +89,14 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
       }
       if (data?.isPremium) {
         setTier("Premium")
+      } else if (selectedPlan === "Premium" && isPromoActive()) {
+        setTier("Free")
+        setOnboardingError("Premium slot not granted. Please try again.")
       } else if (!isPromoActive() && selectedPlan === "Premium") {
         setTier("Free")
         window.location.href = "/Enterprise?payway=1"
+      } else {
+        setTier("Free")
       }
     } catch {
       setOnboardingError("Unable to save onboarding. Please try again.")

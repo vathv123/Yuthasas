@@ -45,6 +45,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: null }, { status: 200 })
   }
 
+  const profile = await withPrismaRetry<any>(
+    () =>
+      db.userProfile.findUnique({
+        where: { userId: user.id },
+        select: { isPremium: true },
+      }),
+    1
+  )
+  if (!profile?.isPremium) {
+    return NextResponse.json({ data: null }, { status: 200 })
+  }
+
   const business = await withPrismaRetry(
     () =>
       db.userBusiness.findUnique({
@@ -91,6 +103,19 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ ok: false }, { status: 404 })
+  }
+
+  const profile = await withPrismaRetry<any>(
+    () =>
+      db.userProfile.findUnique({
+        where: { userId: user.id },
+        select: { isPremium: true },
+      }),
+    1
+  )
+  if (!profile?.isPremium) {
+    // Free users can use calculator, but business persistence is premium-only.
+    return NextResponse.json({ ok: true, persisted: false }, { status: 200 })
   }
 
   let payload: any = null
@@ -157,5 +182,5 @@ export async function POST(request: Request) {
     1
   )
 
-  return NextResponse.json({ ok: true }, { status: 200 })
+  return NextResponse.json({ ok: true, persisted: true }, { status: 200 })
 }
