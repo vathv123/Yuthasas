@@ -115,71 +115,77 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 })
   }
 
-  const db = prisma as any
-  const promoActive = isPromoActive()
-  const desiredPlan =
-    answers && typeof answers === "object" ? (answers as Record<number, string | string[]>)[4] : null
-  const wantsPremium = String(desiredPlan ?? "").toLowerCase() === "premium"
+  try {
+    const promoActive = isPromoActive()
+    const desiredPlan =
+      answers && typeof answers === "object" ? (answers as Record<number, string | string[]>)[4] : null
+    const wantsPremium = String(desiredPlan ?? "").toLowerCase() === "premium"
 
-  let grantPremium = false
-  if (promoActive && wantsPremium) {
-    const existingProfile = await withPrismaRetry<any>(
-      () =>
-        db.userProfile.findUnique({
-          where: { userId: user.id },
-          select: { isPremium: true },
-        }),
-      1
-    )
-    const alreadyPremium = Boolean(existingProfile?.isPremium)
-    if (alreadyPremium) {
-      grantPremium = true
-    } else {
-      const premiumCount = await withPrismaRetry<number>(
+    let grantPremium = false
+    if (promoActive && wantsPremium) {
+      const existingProfile = await withPrismaRetry<any>(
         () =>
-          db.userProfile.count({
-            where: { isPremium: true },
+          db.userProfile.findUnique({
+            where: { userId: user.id },
+            select: { isPremium: true },
           }),
-        1
+        2
       )
-      if (premiumCount < 100) grantPremium = true
+      const alreadyPremium = Boolean(existingProfile?.isPremium)
+      if (alreadyPremium) {
+        grantPremium = true
+      } else {
+        const premiumCount = await withPrismaRetry<number>(
+          () =>
+            db.userProfile.count({
+              where: { isPremium: true },
+            }),
+          2
+        )
+        if (premiumCount < 100) grantPremium = true
+      }
     }
-  }
 
-  await withPrismaRetry(
-    () =>
-      db.userProfile.upsert({
-    where: { userId: user.id },
-    update: {
-      onboardingCompleted: true,
-      onboardingAt: new Date(),
-      isPremium: grantPremium ? true : undefined,
-      premiumSince: grantPremium ? new Date() : undefined,
-      premiumSource: grantPremium ? "promo" : undefined,
-    },
-    create: {
-      userId: user.id,
-      onboardingCompleted: true,
-      onboardingAt: new Date(),
-      isPremium: grantPremium,
-      premiumSince: grantPremium ? new Date() : undefined,
-      premiumSource: grantPremium ? "promo" : undefined,
-    },
-  }),
-    1
-  )
-
-  if (answers) {
     await withPrismaRetry(
       () =>
-        db.userOnboarding.upsert({
-      where: { userId: user.id },
-      update: { answers },
-      create: { userId: user.id, answers },
-    }),
-      1
+        db.userProfile.upsert({
+          where: { userId: user.id },
+          update: {
+            onboardingCompleted: true,
+            onboardingAt: new Date(),
+            isPremium: grantPremium ? true : undefined,
+            premiumSince: grantPremium ? new Date() : undefined,
+            premiumSource: grantPremium ? "promo" : undefined,
+          },
+          create: {
+            userId: user.id,
+            onboardingCompleted: true,
+            onboardingAt: new Date(),
+            isPremium: grantPremium,
+            premiumSince: grantPremium ? new Date() : undefined,
+            premiumSource: grantPremium ? "promo" : undefined,
+          },
+        }),
+      2
+    )
+
+    if (answers) {
+      await withPrismaRetry(
+        () =>
+          db.userOnboarding.upsert({
+            where: { userId: user.id },
+            update: { answers },
+            create: { userId: user.id, answers },
+          }),
+        2
+      )
+    }
+
+    return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Database temporarily unavailable. Please try again." },
+      { status: 503 }
     )
   }
-
-  return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })
 }
