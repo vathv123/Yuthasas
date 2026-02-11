@@ -10,6 +10,46 @@ const db = prisma as any
 
 export const runtime = "nodejs"
 
+const resolveUserFromSession = async (session: { user?: { email?: string | null; name?: string | null } }) => {
+  const email = String(session.user?.email ?? "").trim().toLowerCase()
+  if (!email) return null
+  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
+
+  const existing = await withPrismaRetry<any>(
+    () =>
+      db.user.findUnique({
+        where: { email },
+        select: { id: true },
+      }),
+    3
+  )
+  if (existing) return existing
+
+  try {
+    return await withPrismaRetry<any>(
+      () =>
+        db.user.create({
+          data: {
+            email,
+            name: sessionName || "User",
+            emailVerified: new Date(),
+          },
+          select: { id: true },
+        }),
+      3
+    )
+  } catch {
+    return withPrismaRetry<any>(
+      () =>
+        db.user.findUnique({
+          where: { email },
+          select: { id: true },
+        }),
+      3
+    )
+  }
+}
+
 export async function GET(request: Request) {
   const ip = getRequestIP(request)
   const rl = checkRateLimit(`${ip}:onboarding:get`, 60, 60_000)
@@ -22,25 +62,7 @@ export async function GET(request: Request) {
   }
   await prisma.$connect().catch(() => null)
 
-  const email = String(session.user.email).trim().toLowerCase()
-  const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
-  const user = await withPrismaRetry<any>(
-    () =>
-      db.user.upsert({
-        where: { email },
-        update: {
-          name: sessionName,
-          emailVerified: new Date(),
-        },
-        create: {
-          email,
-          name: sessionName || "User",
-          emailVerified: new Date(),
-        },
-        select: { id: true },
-      }),
-    3
-  )
+  const user = await resolveUserFromSession(session)
 
   if (!user) {
     return NextResponse.json({ completed: false, answers: null }, { status: 200 })
@@ -91,25 +113,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const email = String(session.user.email).trim().toLowerCase()
-    const sessionName = session.user?.name ? String(session.user.name).trim() : undefined
-    const user = await withPrismaRetry<any>(
-      () =>
-        db.user.upsert({
-          where: { email },
-          update: {
-            name: sessionName,
-            emailVerified: new Date(),
-          },
-          create: {
-            email,
-            name: sessionName || "User",
-            emailVerified: new Date(),
-          },
-          select: { id: true },
-        }),
-      5
-    )
+    const user = await resolveUserFromSession(session)
 
     if (!user) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 })
@@ -181,10 +185,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Database temporarily unavailable. Please try again."
+  } catch {
     return NextResponse.json(
-      { ok: false, error: message },
+      { ok: false, error: "Database temporarily unavailable. Please try again." },
       { status: 503 }
     )
   }

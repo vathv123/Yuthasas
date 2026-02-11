@@ -9,6 +9,8 @@ const isClosedConnectionError = (error: unknown) => {
   )
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function withPrismaRetry<T>(operation: () => Promise<T>, retries = 1): Promise<T> {
   try {
     return await operation()
@@ -16,6 +18,7 @@ export async function withPrismaRetry<T>(operation: () => Promise<T>, retries = 
     if (retries > 0 && isClosedConnectionError(error)) {
       await prisma.$disconnect().catch(() => null)
       await prisma.$connect().catch(() => null)
+      await sleep((retries === 1 ? 200 : 400))
       return withPrismaRetry(operation, retries - 1)
     }
     throw error
