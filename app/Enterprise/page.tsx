@@ -1,19 +1,20 @@
-"use client"
+﻿"use client"
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { getSession, useSession } from "next-auth/react"
 import Businesses from "../Businesses"
 import PopupHandler from "./PopupHandler"
 
-export default function Page({
-  searchParams,
-}: {
-  searchParams?: { edit?: string }
-}) {
+export default function Page() {
   const { status } = useSession()
   const router = useRouter()
-  const params = useSearchParams()
   const [authChecked, setAuthChecked] = useState(false)
+  const [forceOnboarding, setForceOnboarding] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setForceOnboarding(params.get("edit") === "1")
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -45,8 +46,6 @@ export default function Page({
       active = false
     }
   }, [status, router])
-
-  const forceOnboarding = params?.get("edit") === "1"
 
   if (status === "loading" || !authChecked) {
     return (
