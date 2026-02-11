@@ -7,6 +7,10 @@ import { verifyPassword } from "./password"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+  pages: {
+    signIn: "/authentications/signup",
+    error: "/authentications/signup",
+  },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -54,14 +58,15 @@ export const authOptions: NextAuthOptions = {
       }
       return session
     },
-    async signIn({ user }) {
-      const email = user?.email
-      if (!email) return false
-
-      const existing = await prisma.user.findUnique({ where: { email } })
-      if (existing) return true
-
-      return true
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      try {
+        const target = new URL(url)
+        if (target.origin === baseUrl) return url
+      } catch {
+        // ignore and fallback
+      }
+      return `${baseUrl}/authentications/signup`
     },
   },
 }
