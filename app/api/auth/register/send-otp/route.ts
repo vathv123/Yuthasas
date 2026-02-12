@@ -6,6 +6,7 @@ import { sendSignupOtpEmail } from "@/lib/email"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash } from "@/lib/device"
+import { withPrismaRetry } from "@/lib/prismaRetry"
 
 export const runtime = "nodejs"
 const ACCOUNT_LIMIT_PER_DEVICE = 2
@@ -67,19 +68,27 @@ export async function POST(request: Request) {
 
   const db = prisma as any
   try {
-    const existing = await db.user.findUnique({ where: { email } })
+    await prisma.$connect().catch(() => null)
+    const existing = await withPrismaRetry<any>(
+      () => db.user.findUnique({ where: { email } }),
+      2
+    )
     if (existing?.passwordHash) {
       return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
     }
 
     let uniqueEmails: string[] = []
     try {
-      const deviceEvents = await db.signupEvent.findMany({
-        where: { ip, deviceHash },
-        distinct: ["email"],
-        select: { email: true },
-        orderBy: { email: "asc" },
-      })
+      const deviceEvents = await withPrismaRetry<Array<{ email: string }>>(
+        () =>
+          db.signupEvent.findMany({
+            where: { ip, deviceHash },
+            distinct: ["email"],
+            select: { email: true },
+            orderBy: { email: "asc" },
+          }),
+        1
+      )
       uniqueEmails = deviceEvents.map((e: { email: string }) => e.email)
     } catch {
       // Keep OTP flow running if optional device-tracking table is unavailable.
@@ -98,7 +107,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const existingName = await db.user.findFirst({ where: { name } })
+    const existingName = await withPrismaRetry<any>(
+      () => db.user.findFirst({ where: { name } }),
+      2
+    )
     if (existingName && existingName.email !== email) {
       return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
     }

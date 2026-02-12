@@ -32,7 +32,14 @@ export async function GET(request: Request) {
         full: active ? count >= limit : false,
         active,
       },
-      { status: 200 }
+      { 
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        }
+       }
     )
   } catch {
     // Keep UI functional when DB is temporarily unavailable.
