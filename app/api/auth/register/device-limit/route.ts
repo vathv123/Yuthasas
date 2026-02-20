@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { getDeviceHash } from "@/lib/device"
 import { withPrismaRetry } from "@/lib/prismaRetry"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -19,6 +21,21 @@ export async function GET(request: Request) {
   }
 
   const db = prisma as any
+  if (isLocalOnlyAuthMode()) {
+    const accounts = localStore.getSignupAccounts(ip, deviceHash)
+    const blockedForRequest =
+      accounts.length >= ACCOUNT_LIMIT_PER_DEVICE && (!email || !accounts.includes(email))
+
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: blockedForRequest,
+        limit: ACCOUNT_LIMIT_PER_DEVICE,
+        accounts,
+      },
+      { status: 200 }
+    )
+  }
 
   try {
     const deviceEvents = await withPrismaRetry<Array<{ email: string }>>(

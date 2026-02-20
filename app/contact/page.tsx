@@ -14,7 +14,7 @@ export default function ContactPage() {
           </p>
         </div>
         <div className="mt-10 max-w-[720px] border border-black/10 rounded-2xl p-6 bg-white">
-          <form action="mailto:imborvath@gmail.com" method="post" encType="text/plain" className="space-y-4">
+          <form method="post" encType="text/plain" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input name="firstName" placeholder="First name" className="border border-black/20 rounded-lg px-3 py-2 focus:outline-none" />
               <input name="lastName" placeholder="Last name" className="border border-black/20 rounded-lg px-3 py-2 focus:outline-none" />

@@ -7,6 +7,8 @@ import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash } from "@/lib/device"
 import { withPrismaRetry } from "@/lib/prismaRetry"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 const ACCOUNT_LIMIT_PER_DEVICE = 2
@@ -64,6 +66,45 @@ export async function POST(request: Request) {
       { ok: false, error: "Password must include upper, lower, number, symbol and be 10+ chars" },
       { status: 400 }
     )
+  }
+  if (isLocalOnlyAuthMode()) {
+    const existing = localStore.getUserByEmail(email)
+    if (existing?.passwordHash) {
+      return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+    }
+
+    const uniqueEmails = localStore.getSignupAccounts(ip, deviceHash)
+    if (uniqueEmails.length >= ACCOUNT_LIMIT_PER_DEVICE && !uniqueEmails.includes(email)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "ACCOUNT_LIMIT_EXCEEDED",
+          error: "This device has reached the max of 2 accounts. Remove one account to continue.",
+          accounts: uniqueEmails,
+        },
+        { status: 409 }
+      )
+    }
+
+    const existingName = localStore.getUsersByName(name)
+    if (existingName.some((user) => user.email !== email)) {
+      return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
+    }
+
+    const passwordHash = hashPassword(password)
+    const otp = issueOtp({ email, name, passwordHash })
+
+    try {
+      await sendSignupOtpEmail(email, otp.code)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to send OTP email"
+      return NextResponse.json(
+        { ok: false, error: message.includes("SMTP") ? message : "Unable to send OTP email" },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
   }
 
   const db = prisma as any

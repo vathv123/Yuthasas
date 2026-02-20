@@ -162,7 +162,7 @@ const OnboardingModal = ({ onComplete }: OnboardingModalProps) => {
                       {plan.name === "Premium" && promoActive ? (
                         <>
                           <p className="text-3xl line-through opacity-70">{plan.price}</p>
-                          <p className="text-sm text-emerald-400">Free during beta</p>
+                          <p className="text-sm text-emerald-400">Free during countdown</p>
                         </>
                       ) : (
                         <p className="text-3xl">{plan.price}</p>

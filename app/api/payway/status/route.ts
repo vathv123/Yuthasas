@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { buildHashString, signHash, toReqTime } from "@/lib/payway"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -56,9 +58,56 @@ export async function GET(request: Request) {
   if (!tranId) {
     return NextResponse.json({ ok: false, error: "Missing tran_id" }, { status: 400 })
   }
+  const email = String(session.user.email).trim().toLowerCase()
+
+  if (isLocalOnlyAuthMode()) {
+    const payment = localStore.getPaymentForEmail(tranId, email)
+    if (!payment) {
+      return NextResponse.json({ ok: false }, { status: 404 })
+    }
+
+    let verifyResult: any = null
+    try {
+      verifyResult = await checkTransaction(tranId)
+    } catch {
+      verifyResult = null
+    }
+
+    const paymentStatus =
+      verifyResult?.data?.payment_status || verifyResult?.data?.paymentStatus || payment.status || "PENDING"
+
+    const isApproved =
+      paymentStatus === "APPROVED" ||
+      paymentStatus === "SUCCESS" ||
+      paymentStatus === "PAID" ||
+      verifyResult?.status?.code === "00"
+
+    localStore.updatePayment(tranId, {
+      status: isApproved ? "APPROVED" : String(paymentStatus),
+      rawResponse: verifyResult ?? payment.rawResponse,
+    })
+
+    if (isApproved) {
+      const onboarding = localStore.getOnboarding(email)
+      localStore.setOnboarding(email, {
+        completed: onboarding?.completed ?? true,
+        answers: onboarding?.answers ?? {},
+        isPremium: true,
+        onboardingAt: onboarding?.onboardingAt ?? new Date(),
+      })
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        status: isApproved ? "APPROVED" : String(paymentStatus),
+      },
+      { status: 200 }
+    )
+  }
 
   const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+    where: { email },
     select: { id: true },
   })
 

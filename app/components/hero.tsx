@@ -11,8 +11,6 @@ const Hero = () => {
     const [nowLabel, setNowLabel] = useState("")
     const [countdown, setCountdown] = useState({ days: "00", hours: "00", minutes: "00", seconds: "00" })
     const [showPromo, setShowPromo] = useState(true)
-    const [betaCount, setBetaCount] = useState<number | null>(null)
-    const [betaLimit, setBetaLimit] = useState<number | null>(null)
 
     useEffect(() => {
         const target = new Date("2026-04-04T00:00:00")
@@ -43,26 +41,6 @@ const Hero = () => {
         return () => window.clearInterval(id)
     }, [])
 
-    useEffect(() => {
-        let ignore = false
-        const load = async () => {
-            try {
-                const res = await fetch("/api/beta-status")
-                const data = await res.json()
-                if (ignore) return
-                setBetaCount(typeof data?.count === "number" ? data.count : null)
-                setBetaLimit(typeof data?.limit === "number" ? data.limit : null)
-            } catch {
-                // ignore
-            }
-        }
-        load()
-        const id = window.setInterval(load, 30000)
-        return () => {
-            ignore = true
-            window.clearInterval(id)
-        }
-    }, [])
     const handleStartNow = () => {
         if (status === "authenticated") {
             router.push("/Enterprise")
@@ -132,10 +110,7 @@ const Hero = () => {
                             <div className="w-[1px] h-4 bg-black/10"></div>
                             <div className="text-[14px] text-black">{countdown.days}:{countdown.hours}:{countdown.minutes}:{countdown.seconds}</div>
                         </div>
-                        <p className="text-[11px] text-black/40 mt-1">
-                            Countdown
-                            {betaCount !== null && betaLimit !== null ? ` | ${betaCount}/${betaLimit}` : ""}
-                        </p>
+                        <p className="text-[11px] text-black/40 mt-1">Countdown</p>
                     </div>
                 </div>
             )}

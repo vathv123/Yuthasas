@@ -5,6 +5,8 @@ import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash } from "@/lib/device"
 import { issueDeleteOtp } from "@/lib/accountOtp"
 import { sendDeleteOtpEmail } from "@/lib/email"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -32,6 +34,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid email" }, { status: 400 })
   }
 
+  if (isLocalOnlyAuthMode()) {
+    const linked = localStore.getSignupAccounts(ip, deviceHash).includes(email)
+    if (!linked) {
+      return NextResponse.json({ ok: false, error: "Email is not linked to this device context" }, { status: 403 })
+    }
+    const user = localStore.getUserByEmail(email)
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "Account not found" }, { status: 404 })
+    }
+
+    const otp = issueDeleteOtp({ email, ip })
+    try {
+      await sendDeleteOtpEmail(email, otp.code)
+    } catch {
+      return NextResponse.json({ ok: false, error: "Unable to send OTP email" }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
+  }
+
   const db = prisma as any
   const linked = await db.signupEvent.findFirst({ where: { ip, deviceHash, email } })
   if (!linked) {
@@ -52,4 +74,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, expiresAt: otp.expiresAt }, { status: 200 })
 }
-

@@ -14,27 +14,6 @@ const Pricing = ({ onGetStarted =() => {}}: PricingProps) => {
     const premiumPrice = isMonthly ? "$4.99" : "$37.78"
     const periodLabel = isMonthly ? "Per member, per monthly" : "Per member, per yearly"
     const [promoActive, setPromoActive] = useState(isPromoActive())
-    const [betaCount, setBetaCount] = useState<number | null>(null)
-    const [betaLimit, setBetaLimit] = useState<number | null>(null)
-
-    useEffect(() => {
-        let ignore = false
-        const load = async () => {
-            try {
-                const res = await fetch("/api/beta-status")
-                const data = await res.json()
-                if (ignore) return
-                setBetaCount(typeof data?.count === "number" ? data.count : null)
-                setBetaLimit(typeof data?.limit === "number" ? data.limit : null)
-            } catch {
-                // ignore
-            }
-        }
-        load()
-        return () => {
-            ignore = true
-        }
-    }, [])
 
     useEffect(() => {
         const id = window.setInterval(() => setPromoActive(isPromoActive()), 60000)
@@ -69,7 +48,6 @@ const Pricing = ({ onGetStarted =() => {}}: PricingProps) => {
                 {promoActive && (
                     <p className="text-[16px] mt-4 text-[#858585]">
                         Get 30% OFF for the first signup
-                        {betaCount !== null && betaLimit !== null ? ` • ${betaCount}/${betaLimit}` : ""}
                     </p>
                 )}
                 <div className="flex flex-wrap w-full justify-center gap-4 mt-5 ">
@@ -127,12 +105,7 @@ const Pricing = ({ onGetStarted =() => {}}: PricingProps) => {
                                         {premiumPrice}
                                     </p>
                                     <p className="text-[16px] text-[#858585]">{periodLabel}</p>
-                                    {promoActive && (
-                                        <p className="text-[12px] text-lime-300/90 mt-1">
-                                            Beta limited to 100 users
-                                            {betaCount !== null && betaLimit !== null ? ` • ${betaCount}/${betaLimit}` : ""}
-                                        </p>
-                                    )}
+                                    {promoActive && <p className="text-[12px] text-lime-300/90 mt-1">Free during countdown</p>}
                                 </div>
                             </div>
                             <div className="flex-[1_1_auto] flex flex-col gap-6 text-white">

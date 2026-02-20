@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma"
 import { signHash, toBase64, toReqTime } from "@/lib/payway"
 import { isPromoActive } from "@/lib/promo"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -48,41 +50,45 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
   }
+  const email = String(session.user.email).trim().toLowerCase()
+  const name = String(session.user.name ?? "Customer")
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, name: true, email: true },
-  })
-
-  if (!user) {
-    return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 })
-  }
-
-  if (!isPromoActive()) {
+  if (isPromoActive()) {
     return NextResponse.json(
-      { ok: false, error: "Premium is coming soon. Please check back later." },
+      { ok: false, error: "Premium is free during countdown. No payment required right now." },
       { status: 409 }
     )
   }
 
-  const db = prisma as any
-  const existingPremium = await db.userProfile.findUnique({
-    where: { userId: user.id },
-    select: { isPremium: true },
-  })
-
-  if (existingPremium?.isPremium) {
-    return NextResponse.json({ ok: false, error: "Already premium." }, { status: 409 })
+  const localMode = isLocalOnlyAuthMode()
+  if (localMode) {
+    const existing = localStore.getOnboarding(email)
+    if (existing?.isPremium) {
+      return NextResponse.json({ ok: false, error: "Already premium." }, { status: 409 })
+    }
   }
 
-  const premiumCount = await db.userProfile.count({
-    where: { isPremium: true },
-  })
-  if (premiumCount >= 100) {
-    return NextResponse.json(
-      { ok: false, error: "Premium beta is full. Please wait for the next release." },
-      { status: 403 }
-    )
+  const db = prisma as any
+  let userId: string | null = null
+  if (!localMode) {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    })
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 })
+    }
+    userId = user.id
+
+    const existingPremium = await db.userProfile.findUnique({
+      where: { userId: user.id },
+      select: { isPremium: true },
+    })
+
+    if (existingPremium?.isPremium) {
+      return NextResponse.json({ ok: false, error: "Already premium." }, { status: 409 })
+    }
   }
 
   let config
@@ -95,7 +101,7 @@ export async function POST(request: Request) {
   const reqTime = toReqTime()
   const tranId = `${reqTime}${Math.floor(10 + Math.random() * 90)}`
   const sanitizeName = (value: string) => value.replace(/[^\x20-\x7E]/g, "").trim()
-  const [rawFirstName, ...lastParts] = (user.name || "Customer").split(" ")
+  const [rawFirstName, ...lastParts] = (name || "Customer").split(" ")
   const firstName = sanitizeName(rawFirstName) || "Customer"
   const lastName = sanitizeName(lastParts.join(" ")) || "User"
 
@@ -112,7 +118,7 @@ export async function POST(request: Request) {
     tran_id: tranId,
     first_name: firstName,
     last_name: lastName,
-    email: user.email ?? "",
+    email,
     phone: "012345678",
     amount: amountValue,
     purchase_type: "purchase",
@@ -178,21 +184,31 @@ export async function POST(request: Request) {
   const qrString = data?.qr_string ?? data?.qrString ?? null
   const qrImage = data?.qr_image ?? data?.qrImage ?? null
 
-  await db.payment.create({
-    data: {
-      userId: user.id,
-      provider: "payway",
-      plan: "premium",
+  if (localMode) {
+    localStore.setPayment({
       tranId,
-      amount: config.amount,
-      currency: config.currency,
+      email,
       status: "PENDING",
-      qrString,
-      qrImage,
-      rawRequest: payload as unknown as object,
-      rawResponse: data as unknown as object,
-    },
-  })
+      rawRequest: payload,
+      rawResponse: data,
+    })
+  } else {
+    await db.payment.create({
+      data: {
+        userId: userId!,
+        provider: "payway",
+        plan: "premium",
+        tranId,
+        amount: config.amount,
+        currency: config.currency,
+        status: "PENDING",
+        qrString,
+        qrImage,
+        rawRequest: payload as unknown as object,
+        rawResponse: data as unknown as object,
+      },
+    })
+  }
 
   return NextResponse.json(
     {

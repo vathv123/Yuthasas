@@ -4,6 +4,8 @@ import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { verifyDeleteOtp } from "@/lib/accountOtp"
 import { getDeviceHash } from "@/lib/device"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -37,6 +39,15 @@ export async function POST(request: Request) {
   if (!verified.ok) {
     return NextResponse.json({ ok: false, error: "Invalid or expired OTP" }, { status: 400 })
   }
+  if (isLocalOnlyAuthMode()) {
+    const linked = localStore.getSignupAccounts(ip, deviceHash).includes(email)
+    if (!linked) {
+      return NextResponse.json({ ok: false, error: "Email is not linked to this device context" }, { status: 403 })
+    }
+
+    localStore.deleteUserByEmail(email)
+    return NextResponse.json({ ok: true }, { status: 200 })
+  }
 
   const db = prisma as any
   const linked = await db.signupEvent.findFirst({ where: { ip, deviceHash, email } })
@@ -49,4 +60,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true }, { status: 200 })
 }
-

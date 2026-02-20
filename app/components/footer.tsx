@@ -38,7 +38,7 @@ const footer = () => {
                         </div>
                     </div>
                     <div className="flex-[1_1_250px] flex flex-col justify-center  gap-6 mt-[80px]">
-                        <form action="mailto:imborvath@gmail.com" method="post" encType="text/plain" className="flex flex-col gap-6">
+                        <form method="post" encType="text/plain" className="flex flex-col gap-6">
                             <div className="w-full flex gap-6 ">
                                 <div className="flex flex-col">
                                     <label htmlFor="footerFirstName" className="text-[13px]">First Name</label>

@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma"
 import { hashPassword } from "@/lib/password"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -57,6 +59,34 @@ export async function POST(request: Request) {
       { ok: false, error: "Password must include upper, lower, number, symbol and be 10+ chars" },
       { status: 400 }
     )
+  }
+  if (isLocalOnlyAuthMode()) {
+    const existing = localStore.getUserByEmail(email)
+    const existingName = localStore.getUsersByName(name)
+    if (existingName.some((user) => user.email !== email)) {
+      return NextResponse.json({ ok: false, error: "Username already exists" }, { status: 409 })
+    }
+
+    const passwordHash = hashPassword(password)
+    if (existing) {
+      if (!existing.passwordHash) {
+        localStore.upsertUser({
+          email,
+          name: existing.name ?? name,
+          passwordHash,
+        })
+        return NextResponse.json({ ok: true, updated: true }, { status: 200 })
+      }
+      return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+    }
+
+    localStore.upsertUser({
+      name,
+      email,
+      passwordHash,
+    })
+
+    return NextResponse.json({ ok: true }, { status: 201 })
   }
 
   const db = prisma as any

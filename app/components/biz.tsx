@@ -483,7 +483,7 @@ const Biz = ({
   }, [isPremium, isLoaded, businessName, businessType, businessScale, financialStress, items, costs])
 
   const startPaywayPayment = async () => {
-    if (!promoActive) {
+    if (promoActive) {
       setShowUpgradeModal(true)
       setPaywayStatus("idle")
       return
@@ -975,7 +975,6 @@ const Biz = ({
   }
 
   const exportAsExcel = async () => {
-    const XLSX = await import("xlsx")
     const costRows = config.costCategories.map(cat => [
       cat.name + ":",
       costs[cat.id] || 0
@@ -1011,11 +1010,48 @@ const Biz = ({
       ["6-Month Projection:", Number(formatMoney(calculations.futureValue))],
     ]
 
-    const ws = XLSX.utils.aoa_to_sheet(summaryData)
-    ws["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Report")
-    XLSX.writeFile(wb, `business-calc-${Date.now()}.xlsx`)
+    const escapeXml = (value: string | number) =>
+      String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;")
+
+    const rowsXml = summaryData
+      .map((row) => {
+        const cellsXml = row
+          .map((cell) => {
+            const value = cell ?? ""
+            const isNumber = typeof value === "number" && Number.isFinite(value)
+            const type = isNumber ? "Number" : "String"
+            return `<Cell><Data ss:Type="${type}">${escapeXml(value)}</Data></Cell>`
+          })
+          .join("")
+        return `<Row>${cellsXml}</Row>`
+      })
+      .join("")
+
+    const spreadsheetXml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Worksheet ss:Name="Report">
+  <Table>
+   ${rowsXml}
+  </Table>
+ </Worksheet>
+</Workbook>`
+
+    const blob = new Blob([spreadsheetXml], { type: "application/vnd.ms-excel;charset=utf-8;" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = `business-calc-${Date.now()}.xls`
+    link.click()
+    URL.revokeObjectURL(link.href)
   }
 
   const exportAsPDF = async () => {
@@ -2091,8 +2127,8 @@ const Biz = ({
               <h2 className="text-2xl font-bold text-white mb-2 text-center">Unlock Premium Features</h2>
               <p className="text-slate-400 text-center">
                 {promoActive
-                  ? "Upgrade to Premium to unlock analysis, reports, and all export formats."
-                  : "Premium is coming soon. We are finalizing features and opening access shortly."}
+                  ? "Premium is free during countdown. Complete onboarding and choose Premium to unlock now."
+                  : "Upgrade to Premium to unlock analysis, reports, and all export formats."}
               </p>
             </div>
 
@@ -2132,18 +2168,18 @@ const Biz = ({
               </button>
               <button
                 onClick={() => {
-                  if (!promoActive) return
+                  if (promoActive) return
                   setShowUpgradeModal(false)
                   startPaywayPayment()
                 }}
                 className={`px-4 py-3 rounded-lg font-bold transition ${
                   promoActive
-                    ? "bg-linear-to-r from-lime-400 to-lime-500 text-black hover:shadow-lg hover:shadow-lime-400/50"
-                    : "bg-slate-700 text-slate-300 cursor-not-allowed"
+                    ? "bg-slate-700 text-slate-300 cursor-not-allowed"
+                    : "bg-linear-to-r from-lime-400 to-lime-500 text-black hover:shadow-lg hover:shadow-lime-400/50"
                 }`}
-                disabled={!promoActive}
+                disabled={promoActive}
               >
-                {promoActive ? "Show QR to Pay" : "Coming Soon"}
+                {promoActive ? "Free During Countdown" : "Show QR to Pay"}
               </button>
             </div>
 

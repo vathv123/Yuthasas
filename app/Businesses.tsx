@@ -26,24 +26,6 @@ const Businesses = ({ forceOnboarding = false }: { forceOnboarding?: boolean }) 
     }
     const loadStatus = async () => {
       try {
-        const email = session?.user?.email?.trim().toLowerCase()
-        if (email) {
-          const limitRes = await fetch(`/api/auth/register/device-limit?email=${encodeURIComponent(email)}`, {
-            method: "GET",
-          })
-          const limitData = await limitRes.json().catch(() => null)
-          if (limitRes.ok && limitData?.blocked) {
-            // Do not leave the page in an unresolved state.
-            // Account limiting is enforced during signup/signin flows.
-            setShowOnboarding("show")
-          }
-        }
-
-        await fetch("/api/auth/register/device-register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }).catch(() => null)
-
         const res = await fetch("/api/onboarding", { method: "GET" })
         const data = await res.json()
         const answers = data?.answers && typeof data.answers === "object" ? (data.answers as Record<number, string | string[]>) : null

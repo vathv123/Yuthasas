@@ -4,6 +4,8 @@ import { verifyOtp } from "@/lib/otp"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash, getUserAgent } from "@/lib/device"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -50,6 +52,29 @@ export async function POST(request: Request) {
       invalid: "Invalid OTP code.",
     }
     return NextResponse.json({ ok: false, error: errorByReason[verified.reason] ?? "Invalid OTP" }, { status: 400 })
+  }
+  if (isLocalOnlyAuthMode()) {
+    const now = new Date()
+    const existing = localStore.getUserByEmail(verified.email)
+
+    if (existing?.passwordHash) {
+      return NextResponse.json({ ok: false, error: "Email already registered" }, { status: 409 })
+    }
+
+    localStore.upsertUser({
+      email: verified.email,
+      name: existing?.name ?? verified.name,
+      passwordHash: verified.passwordHash,
+      emailVerified: existing?.emailVerified ?? now,
+    })
+    localStore.addSignupEvent({
+      email: verified.email,
+      ip,
+      deviceHash,
+      userAgent,
+    })
+
+    return NextResponse.json({ ok: true, updated: Boolean(existing) }, { status: existing ? 200 : 201 })
   }
 
   const db = prisma as any

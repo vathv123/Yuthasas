@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { isPromoActive } from "@/lib/promo"
 import { withPrismaRetry } from "@/lib/prismaRetry"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 const db = prisma as any
 
@@ -60,6 +62,19 @@ export async function GET(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ completed: false, answers: null }, { status: 200 })
   }
+  if (isLocalOnlyAuthMode()) {
+    const email = String(session.user.email).trim().toLowerCase()
+    const data = localStore.getOnboarding(email)
+    return NextResponse.json(
+      {
+        completed: Boolean(data?.completed),
+        answers: data?.answers ?? null,
+        isPremium: Boolean(data?.isPremium),
+      },
+      { status: 200 }
+    )
+  }
+
   await prisma.$connect().catch(() => null)
 
   const user = await resolveUserFromSession(session)
@@ -99,7 +114,6 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
-  await prisma.$connect().catch(() => null)
 
   let answers: unknown = null
   try {
@@ -111,6 +125,32 @@ export async function POST(request: Request) {
   if (answers !== null && typeof answers !== "object") {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 })
   }
+  if (isLocalOnlyAuthMode()) {
+    const email = String(session.user.email).trim().toLowerCase()
+    const promoActive = isPromoActive()
+    const desiredPlan =
+      answers && typeof answers === "object" ? (answers as Record<number, string | string[]>)[4] : null
+    const wantsPremium = String(desiredPlan ?? "").toLowerCase() === "premium"
+    const existing = localStore.getOnboarding(email)
+
+    let grantPremium = false
+    if (existing?.isPremium) {
+      grantPremium = true
+    } else if (promoActive && wantsPremium) {
+      grantPremium = true
+    }
+
+    localStore.setOnboarding(email, {
+      completed: true,
+      answers: (answers as Record<number, string | string[]>) ?? {},
+      isPremium: grantPremium,
+      onboardingAt: new Date(),
+    })
+
+    return NextResponse.json({ ok: true, isPremium: grantPremium, promoActive }, { status: 200 })
+  }
+
+  await prisma.$connect().catch(() => null)
 
   try {
     const user = await resolveUserFromSession(session)
@@ -137,16 +177,8 @@ export async function POST(request: Request) {
       const alreadyPremium = Boolean(existingProfile?.isPremium)
       if (alreadyPremium) {
         grantPremium = true
-      } else {
-        const premiumCount = await withPrismaRetry<number>(
-          () =>
-            db.userProfile.count({
-              where: { isPremium: true },
-            }),
-          5
-        )
-        if (premiumCount < 100) grantPremium = true
       }
+      if (!alreadyPremium) grantPremium = true
     }
 
     await withPrismaRetry(

@@ -6,6 +6,8 @@ import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
 import { rejectIfNotSameOrigin } from "@/lib/security"
 import { getDeviceHash, getUserAgent } from "@/lib/device"
 import { withPrismaRetry } from "@/lib/prismaRetry"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -27,6 +29,14 @@ export async function POST(request: Request) {
 
   const deviceHash = getDeviceHash(request)
   const userAgent = getUserAgent(request)
+  if (isLocalOnlyAuthMode()) {
+    const exists = localStore.getSignupAccounts(ip, deviceHash).includes(email)
+    if (!exists) {
+      localStore.addSignupEvent({ email, ip, deviceHash, userAgent })
+    }
+    return NextResponse.json({ ok: true }, { status: 200 })
+  }
+
   const db = prisma as any
 
   const existing = await withPrismaRetry<any>(

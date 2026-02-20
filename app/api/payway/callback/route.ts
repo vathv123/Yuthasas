@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { buildHashString, signHash, toReqTime } from "@/lib/payway"
 import { checkRateLimit, getRequestIP } from "@/lib/rateLimit"
+import { isLocalOnlyAuthMode } from "@/lib/localMode"
+import { localStore } from "@/lib/localStore"
 
 export const runtime = "nodejs"
 
@@ -79,6 +81,49 @@ export async function POST(request: Request) {
   const tranId = extractTranId(payload)
   if (!tranId) {
     return NextResponse.json({ ok: false }, { status: 400 })
+  }
+  if (isLocalOnlyAuthMode()) {
+    const payment = localStore.getPayment(tranId)
+    if (!payment) {
+      return NextResponse.json({ ok: true }, { status: 200 })
+    }
+
+    let verifyResult: any = null
+    try {
+      verifyResult = await checkTransaction(tranId)
+    } catch {
+      verifyResult = null
+    }
+
+    const paymentStatus =
+      verifyResult?.data?.payment_status ||
+      verifyResult?.data?.paymentStatus ||
+      payload.payment_status ||
+      payload.status ||
+      "PENDING"
+
+    const isApproved =
+      paymentStatus === "APPROVED" ||
+      paymentStatus === "SUCCESS" ||
+      paymentStatus === "PAID" ||
+      verifyResult?.status?.code === "00"
+
+    localStore.updatePayment(tranId, {
+      status: isApproved ? "APPROVED" : String(paymentStatus),
+      rawResponse: verifyResult ?? payload,
+    })
+
+    if (isApproved) {
+      const onboarding = localStore.getOnboarding(payment.email)
+      localStore.setOnboarding(payment.email, {
+        completed: onboarding?.completed ?? true,
+        answers: onboarding?.answers ?? {},
+        isPremium: true,
+        onboardingAt: onboarding?.onboardingAt ?? new Date(),
+      })
+    }
+
+    return NextResponse.json({ ok: true }, { status: 200 })
   }
 
   const db = prisma as any
